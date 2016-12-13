@@ -12077,6 +12077,9 @@ enifed('ember-glimmer/syntax/outlet', ['exports', 'ember-utils', 'glimmer-runtim
     };
 
     OutletComponentManager.prototype.create = function create(environment, definition, args, dynamicScope) {
+      //SPIKE: GJ
+      window.lastComponent = definition.template.meta.moduleName;
+
       var outletStateReference = dynamicScope.outletState = dynamicScope.outletState.get('outlets').get(definition.outletName);
       var outletState = outletStateReference.value();
       return new StateBucket(outletState);
@@ -12102,6 +12105,8 @@ enifed('ember-glimmer/syntax/outlet', ['exports', 'ember-utils', 'glimmer-runtim
 
     OutletComponentManager.prototype.didRenderLayout = function didRenderLayout(bucket) {
       bucket.finalize();
+      //SPIKE: GJ
+      window.lastComponent = undefined;
     };
 
     OutletComponentManager.prototype.didCreateElement = function didCreateElement() {};
