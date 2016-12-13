@@ -6,7 +6,7 @@
  *            Portions Copyright 2008-2011 Apple Inc. All rights reserved.
  * @license   Licensed under MIT license
  *            See https://raw.github.com/emberjs/ember.js/master/LICENSE
- * @version   2.10.0
+ * @version   2.10.0-with-backtracking-debugging
  */
 
 var enifed, requireModule, Ember;
@@ -6544,6 +6544,8 @@ enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'e
   if (_emberMetalFeatures.default('ember-glimmer-detect-backtracking-rerender') || _emberMetalFeatures.default('ember-glimmer-allow-backtracking-rerender')) {
     members.lastRendered = ownMap;
     members.lastRenderedFrom = ownMap; // FIXME: not used in production, remove me from prod builds
+    //SPIKE: GJ
+    members.lastRenderedInTemplate = ownMap;
   }
 
   var memberNames = Object.keys(members);
@@ -10114,6 +10116,10 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
         _emberMetalDebug.runInDebug(function () {
           var lastRenderedFrom = meta.writableLastRenderedFrom();
           lastRenderedFrom[key] = reference;
+
+          //SPIKE: GJ
+          var lastRenderedInTemplate = meta.writableLastRenderedInTemplate();
+          lastRenderedInTemplate[key] = window.lastComponent;
         });
       };
 
@@ -10126,6 +10132,9 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
             var ref = meta.readableLastRenderedFrom();
             var parts = [];
             var lastRef = ref[key];
+
+            var templates = meta.readableLastRenderedInTemplate();
+            var lastTemplate = templates[key];
 
             var label = undefined;
 
@@ -10140,7 +10149,7 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
               label = 'the same value';
             }
 
-            return 'You modified ' + parts.join('.') + ' twice on ' + object + ' in a single render. This was unreliable and slow in Ember 1.x and ' + implication;
+            return 'You rendered "' + parts.join('.') + '" in "' + lastTemplate + '" and modified it in "[TODO (' + object + ')]" in a single render. This was unreliable and slow in Ember 1.x and ' + implication;
           })(), false);
 
           shouldReflush = true;
@@ -19409,7 +19418,7 @@ enifed("ember/features", ["exports"], function (exports) {
 enifed("ember/version", ["exports"], function (exports) {
   "use strict";
 
-  exports.default = "2.10.0";
+  exports.default = "2.10.0-with-backtracking-debugging";
 });
 /*!
  * @overview RSVP - a tiny implementation of Promises/A+.
