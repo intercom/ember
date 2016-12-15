@@ -1,6 +1,6 @@
 {
   "name": "ember",
-  "version": "2.10.1-gj/2.10.1-with-backtracking-debugging+93b4ab56",
+  "version": "2.10.1-with-backtracking-debugging",
   "license": "MIT",
   "homepage": "https://github.com/emberjs/ember.js",
   "main": [
