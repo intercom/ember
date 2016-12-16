@@ -6547,7 +6547,9 @@ enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'e
 
   if (_emberMetalFeatures.default('ember-glimmer-detect-backtracking-rerender') || _emberMetalFeatures.default('ember-glimmer-allow-backtracking-rerender')) {
     members.lastRendered = ownMap;
+    //TODO: GJ: are these the best names?
     members.lastRenderedFrom = ownMap; // FIXME: not used in production, remove me from prod builds
+    members.lastRenderedInTemplate = ownMap;
   }
 
   var memberNames = Object.keys(members);
@@ -6590,6 +6592,7 @@ enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'e
     if (_emberMetalFeatures.default('ember-glimmer-detect-backtracking-rerender') || _emberMetalFeatures.default('ember-glimmer-allow-backtracking-rerender')) {
       this._lastRendered = undefined;
       this._lastRenderedFrom = undefined; // FIXME: not used in production, remove me from prod builds
+      this._lastRenderedInTemplate = undefined;
     }
 
     this._initializeListeners();
@@ -10097,10 +10100,14 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
       var counter = 0;
       var inTransaction = false;
       var shouldReflush = undefined;
+      var templateDebugStack = undefined;
 
       exports.default = runInTransaction = function (context, methodName) {
         shouldReflush = false;
         inTransaction = true;
+        _emberMetalDebug.runInDebug(function () {
+          templateDebugStack = context.env.templateDebugStack;
+        });
         context[methodName]();
         inTransaction = false;
         counter++;
@@ -10118,6 +10125,12 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
         _emberMetalDebug.runInDebug(function () {
           var lastRenderedFrom = meta.writableLastRenderedFrom();
           lastRenderedFrom[key] = reference;
+
+          if (templateDebugStack) {
+            //TODO: GJ: why is templateDebugStack sometimes undefined?
+            var lastRenderedInTemplate = meta.writableLastRenderedInTemplate();
+            lastRenderedInTemplate[key] = templateDebugStack.getCurrent();
+          }
         });
       };
 
@@ -10144,7 +10157,11 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
               label = 'the same value';
             }
 
-            return 'You modified ' + parts.join('.') + ' twice on ' + object + ' in a single render. This was unreliable and slow in Ember 1.x and ' + implication;
+            var templates = meta.readableLastRenderedInTemplate();
+            var lastRenderedInTemplate = templates[key];
+
+            var currentTemplate = templateDebugStack.getCurrent();
+            return 'You rendered "' + parts.join('.') + '" in "' + lastRenderedInTemplate + '" and modified it in "' + currentTemplate + '" (' + object + ') in a single render. This was unreliable and slow in Ember 1.x and ' + implication;
           })(), false);
 
           shouldReflush = true;
