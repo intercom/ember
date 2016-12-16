@@ -7774,6 +7774,28 @@ enifed('ember-glimmer/environment', ['exports', 'ember-utils', 'ember-metal', 'e
     textarea: '-text-area'
   };
 
+  //TODO: GJ: extract
+
+  var TemplateDebugStack = (function () {
+    function TemplateDebugStack() {
+      this._stack = [];
+    }
+
+    TemplateDebugStack.prototype.push = function push(templateName) {
+      this._stack.push(templateName);
+    };
+
+    TemplateDebugStack.prototype.pop = function pop() {
+      return this._stack.pop();
+    };
+
+    TemplateDebugStack.prototype.getCurrent = function getCurrent() {
+      return this._stack[this._stack.length - 1];
+    };
+
+    return TemplateDebugStack;
+  })();
+
   var Environment = (function (_GlimmerEnvironment) {
     babelHelpers.inherits(Environment, _GlimmerEnvironment);
 
@@ -11171,6 +11193,7 @@ babelHelpers.inherits(CurlyComponentSyntax, _StatementSyntax);
     };
 
     CurlyComponentManager.prototype.create = function create(environment, definition, args, dynamicScope, callerSelfRef, hasBlock) {
+
       var parentView = dynamicScope.view;
 
       var klass = definition.ComponentClass;
@@ -11325,6 +11348,7 @@ babelHelpers.inherits(CurlyComponentSyntax, _StatementSyntax);
       var args = bucket.args;
       var argsRevision = bucket.argsRevision;
       var environment = bucket.environment;
+      //TODO: GJ: do we need this?
 
       bucket.finalizer = _emberMetal._instrumentStart('render.component', rerenderInstrumentDetails, component);
 
@@ -11384,6 +11408,7 @@ babelHelpers.inherits(TopComponentManager, _CurlyComponentManager);
     }
 
     TopComponentManager.prototype.create = function create(environment, definition, args, dynamicScope, currentScope, hasBlock) {
+
       var component = definition.ComponentClass;
 
       var finalizer = _emberMetal._instrumentStart('render.component', initialRenderInstrumentDetails, component);
@@ -12049,6 +12074,7 @@ enifed('ember-glimmer/syntax/outlet', ['exports', 'ember-utils', 'glimmer-runtim
     };
 
     OutletComponentManager.prototype.create = function create(environment, definition, args, dynamicScope) {
+
       var outletStateReference = dynamicScope.outletState = dynamicScope.outletState.get('outlets').get(definition.outletName);
       var outletState = outletStateReference.value();
       return new StateBucket(outletState);
@@ -12099,6 +12125,7 @@ enifed('ember-glimmer/syntax/outlet', ['exports', 'ember-utils', 'glimmer-runtim
     }
 
     TopLevelOutletComponentManager.prototype.create = function create(environment, definition, args, dynamicScope) {
+
       return new StateBucket(dynamicScope.outletState.value());
     };
 
@@ -17651,7 +17678,9 @@ enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'e
 
   if (false || true) {
     members.lastRendered = ownMap;
+    //TODO: GJ: are these the best names?
     members.lastRenderedFrom = ownMap; // FIXME: not used in production, remove me from prod builds
+    members.lastRenderedInTemplate = ownMap;
   }
 
   var memberNames = Object.keys(members);
@@ -17691,6 +17720,7 @@ enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'e
     if (false || true) {
       this._lastRendered = undefined;
       this._lastRenderedFrom = undefined; // FIXME: not used in production, remove me from prod builds
+      this._lastRenderedInTemplate = undefined;
     }
 
     this._initializeListeners();
@@ -21143,10 +21173,12 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
       var counter = 0;
       var inTransaction = false;
       var shouldReflush = undefined;
+      var templateDebugStack = undefined;
 
       exports.default = runInTransaction = function (context, methodName) {
         shouldReflush = false;
         inTransaction = true;
+
         context[methodName]();
         inTransaction = false;
         counter++;
@@ -21185,7 +21217,11 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
               label = 'the same value';
             }
 
-            return 'You modified ' + parts.join('.') + ' twice on ' + object + ' in a single render. This was unreliable and slow in Ember 1.x and ' + implication;
+            var templates = meta.readableLastRenderedInTemplate();
+            var lastRenderedInTemplate = templates[key];
+
+            var currentTemplate = templateDebugStack.getCurrent();
+            return 'You rendered "' + parts.join('.') + '" in "' + lastRenderedInTemplate + '" and modified it in "' + currentTemplate + '" (' + object + ') in a single render. This was unreliable and slow in Ember 1.x and ' + implication;
           })(), false);
 
           shouldReflush = true;
@@ -21210,6 +21246,7 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
   exports.didRender = didRender;
   exports.assertNotRendered = assertNotRendered;
 });
+//TODO: GJ: why is templateDebugStack sometimes undefined?
 enifed('ember-metal/watch_key', ['exports', 'ember-utils', 'ember-metal/features', 'ember-metal/meta', 'ember-metal/properties'], function (exports, _emberUtils, _emberMetalFeatures, _emberMetalMeta, _emberMetalProperties) {
   'use strict';
 
