@@ -6,7 +6,7 @@
  *            Portions Copyright 2008-2011 Apple Inc. All rights reserved.
  * @license   Licensed under MIT license
  *            See https://raw.github.com/emberjs/ember.js/master/LICENSE
- * @version   2.11.0-beta.2
+ * @version   2.12.0-canary-with-improved-backtracking-assertion
  */
 
 var enifed, requireModule, Ember;
@@ -2785,6 +2785,8 @@ enifed('ember-metal/alias', ['exports', 'ember-utils', 'ember-metal/debug', 'emb
   exports.default = alias;
   exports.AliasedProperty = AliasedProperty;
 
+  var CONSUMED = {};
+
   function alias(altKey) {
     return new AliasedProperty(altKey);
   }
@@ -2805,28 +2807,30 @@ enifed('ember-metal/alias', ['exports', 'ember-utils', 'ember-metal/debug', 'emb
     }
   };
 
-  AliasedProperty.prototype._addDependentKeyIfMissing = function (obj, keyName) {
+  AliasedProperty.prototype.teardown = function (obj, keyName) {
     var meta = _emberMetalMeta.meta(obj);
-    if (!meta.peekDeps(this.altKey, keyName)) {
-      _emberMetalDependent_keys.addDependentKeys(this, obj, keyName, meta);
-    }
-  };
-
-  AliasedProperty.prototype._removeDependentKeyIfAdded = function (obj, keyName) {
-    var meta = _emberMetalMeta.meta(obj);
-    if (meta.peekDeps(this.altKey, keyName)) {
+    if (meta.peekWatching(keyName)) {
       _emberMetalDependent_keys.removeDependentKeys(this, obj, keyName, meta);
     }
   };
 
-  AliasedProperty.prototype.willWatch = AliasedProperty.prototype._addDependentKeyIfMissing;
-  AliasedProperty.prototype.didUnwatch = AliasedProperty.prototype._removeDependentKeyIfAdded;
-  AliasedProperty.prototype.teardown = AliasedProperty.prototype._removeDependentKeyIfAdded;
+  AliasedProperty.prototype.willWatch = function (obj, keyName) {
+    _emberMetalDependent_keys.addDependentKeys(this, obj, keyName, _emberMetalMeta.meta(obj));
+  };
+
+  AliasedProperty.prototype.didUnwatch = function (obj, keyName) {
+    _emberMetalDependent_keys.removeDependentKeys(this, obj, keyName, _emberMetalMeta.meta(obj));
+  };
 
   AliasedProperty.prototype.get = function AliasedProperty_get(obj, keyName) {
-    this._addDependentKeyIfMissing(obj, keyName);
-
-    return _emberMetalProperty_get.get(obj, this.altKey);
+    var ret = _emberMetalProperty_get.get(obj, this.altKey);
+    var meta = _emberMetalMeta.meta(obj);
+    var cache = meta.writableCache();
+    if (cache[keyName] !== CONSUMED) {
+      cache[keyName] = CONSUMED;
+      _emberMetalDependent_keys.addDependentKeys(this, obj, keyName, meta);
+    }
+    return ret;
   };
 
   AliasedProperty.prototype.set = function AliasedProperty_set(obj, keyName, value) {
@@ -6474,7 +6478,7 @@ enifed('ember-metal/merge', ['exports'], function (exports) {
     return original;
   }
 });
-enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'ember-metal/meta_listeners', 'ember-metal/debug', 'ember-metal/chains'], function (exports, _emberUtils, _emberMetalFeatures, _emberMetalMeta_listeners, _emberMetalDebug, _emberMetalChains) {
+enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'ember-metal/meta_listeners', 'ember-metal/debug', 'ember-metal/chains', 'require'], function (exports, _emberUtils, _emberMetalFeatures, _emberMetalMeta_listeners, _emberMetalDebug, _emberMetalChains, _require) {
   'no use strict';
   // Remove "use strict"; from transpiled module until
   // https://bugs.webkit.org/show_bug.cgi?id=138038 is fixed
@@ -6539,13 +6543,19 @@ enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'e
 
   if (_emberMetalFeatures.default('ember-glimmer-detect-backtracking-rerender') || _emberMetalFeatures.default('ember-glimmer-allow-backtracking-rerender')) {
     members.lastRendered = ownMap;
-    members.lastRenderedFrom = ownMap; // FIXME: not used in production, remove me from prod builds
+    if (_require.has('ember-debug')) {
+      //https://github.com/emberjs/ember.js/issues/14732
+      members.lastRenderedReferenceMap = ownMap;
+      members.lastRenderedTemplateMap = ownMap;
+    }
   }
 
   var memberNames = Object.keys(members);
   var META_FIELD = '__ember_meta__';
 
   function Meta(obj, parentMeta) {
+    var _this = this;
+
     _emberMetalDebug.runInDebug(function () {
       return counters.metaInstantiated++;
     });
@@ -6581,7 +6591,10 @@ enifed('ember-metal/meta', ['exports', 'ember-utils', 'ember-metal/features', 'e
 
     if (_emberMetalFeatures.default('ember-glimmer-detect-backtracking-rerender') || _emberMetalFeatures.default('ember-glimmer-allow-backtracking-rerender')) {
       this._lastRendered = undefined;
-      this._lastRenderedFrom = undefined; // FIXME: not used in production, remove me from prod builds
+      _emberMetalDebug.runInDebug(function () {
+        _this._lastRenderedReferenceMap = undefined;
+        _this._lastRenderedTemplateMap = undefined;
+      });
     }
 
     this._initializeListeners();
@@ -10098,10 +10111,14 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
       var counter = 0;
       var inTransaction = false;
       var shouldReflush = undefined;
+      var templateDebugStack = undefined;
 
       exports.default = runInTransaction = function (context, methodName) {
         shouldReflush = false;
         inTransaction = true;
+        _emberMetalDebug.runInDebug(function () {
+          templateDebugStack = context.env.templateDebugStack;
+        });
         context[methodName]();
         inTransaction = false;
         counter++;
@@ -10117,8 +10134,11 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
         lastRendered[key] = counter;
 
         _emberMetalDebug.runInDebug(function () {
-          var lastRenderedFrom = meta.writableLastRenderedFrom();
-          lastRenderedFrom[key] = reference;
+          var referenceMap = meta.writableLastRenderedReferenceMap();
+          referenceMap[key] = reference;
+
+          var templateMap = meta.writableLastRenderedTemplateMap();
+          templateMap[key] = templateDebugStack.peek();
         });
       };
 
@@ -10128,10 +10148,14 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
 
         if (lastRendered && lastRendered[key] === counter) {
           raise((function () {
-            var ref = meta.readableLastRenderedFrom();
-            var parts = [];
-            var lastRef = ref[key];
+            var templateMap = meta.readableLastRenderedTemplateMap();
+            var lastRenderedTemplate = templateMap[key];
 
+            var currentTemplate = templateDebugStack.peek();
+
+            var referenceMap = meta.readableLastRenderedReferenceMap();
+            var lastRef = referenceMap[key];
+            var parts = [];
             var label = undefined;
 
             if (lastRef) {
@@ -10140,12 +10164,12 @@ enifed('ember-metal/transaction', ['exports', 'ember-metal/meta', 'ember-metal/d
                 lastRef = lastRef._parentReference;
               }
 
-              label = parts.join();
+              label = parts.join('.');
             } else {
               label = 'the same value';
             }
 
-            return 'You modified ' + label + ' twice on ' + object + ' in a single render. This was unreliable and slow in Ember 1.x and ' + implication;
+            return 'You modified "' + label + '" twice on ' + object + ' in a single render. It was rendered in "' + lastRenderedTemplate + '" and modified in "' + currentTemplate + '". This was unreliable and slow in Ember 1.x and ' + implication;
           })(), false);
 
           shouldReflush = true;
@@ -13461,9 +13485,7 @@ enifed('ember-runtime/mixins/array', ['exports', 'ember-utils', 'ember-metal', '
   }).readOnly(), _Mixin$create.lastObject = _emberMetal.computed(function () {
     return objectAt(this, _emberMetal.get(this, 'length') - 1);
   }).readOnly(), _Mixin$create.contains = function (obj) {
-    if (_emberMetal.isFeatureEnabled('ember-runtime-enumerable-includes')) {
-      _emberMetal.deprecate('`Enumerable#contains` is deprecated, use `Enumerable#includes` instead.', false, { id: 'ember-runtime.enumerable-contains', until: '3.0.0', url: 'http://emberjs.com/deprecations/v2.x#toc_enumerable-contains' });
-    }
+    _emberMetal.deprecate('`Enumerable#contains` is deprecated, use `Enumerable#includes` instead.', false, { id: 'ember-runtime.enumerable-contains', until: '3.0.0', url: 'http://emberjs.com/deprecations/v2.x#toc_enumerable-contains' });
 
     return this.indexOf(obj) >= 0;
   }, _Mixin$create.slice = function (beginIndex, endIndex) {
@@ -13537,6 +13559,27 @@ enifed('ember-runtime/mixins/array', ['exports', 'ember-utils', 'ember-metal', '
     return arrayContentWillChange(this, startIdx, removeAmt, addAmt);
   }, _Mixin$create.arrayContentDidChange = function (startIdx, removeAmt, addAmt) {
     return arrayContentDidChange(this, startIdx, removeAmt, addAmt);
+  }, _Mixin$create.includes = function (obj, startAt) {
+    var len = _emberMetal.get(this, 'length');
+
+    if (startAt === undefined) {
+      startAt = 0;
+    }
+
+    if (startAt < 0) {
+      startAt += len;
+    }
+
+    for (var idx = startAt; idx < len; idx++) {
+      var currentObj = objectAt(this, idx);
+
+      // SameValueZero comparison (NaN !== NaN)
+      if (obj === currentObj || obj !== obj && currentObj !== currentObj) {
+        return true;
+      }
+    }
+
+    return false;
   }, _Mixin$create['@each'] = _emberMetal.computed(function () {
     // TODO use Symbol or add to meta
     if (!this.__each) {
@@ -13545,55 +13588,6 @@ enifed('ember-runtime/mixins/array', ['exports', 'ember-utils', 'ember-metal', '
 
     return this.__each;
   }).volatile().readOnly(), _Mixin$create));
-
-  if (_emberMetal.isFeatureEnabled('ember-runtime-enumerable-includes')) {
-    ArrayMixin.reopen({
-      /**
-        Returns `true` if the passed object can be found in the array.
-        This method is a Polyfill for ES 2016 Array.includes.
-        If no `startAt` argument is given, the starting location to
-        search is 0. If it's negative, searches from the index of
-        `this.length + startAt` by asc.
-         ```javascript
-        [1, 2, 3].includes(2);     // true
-        [1, 2, 3].includes(4);     // false
-        [1, 2, 3].includes(3, 2);  // true
-        [1, 2, 3].includes(3, 3);  // false
-        [1, 2, 3].includes(3, -1); // true
-        [1, 2, 3].includes(1, -1); // false
-        [1, 2, 3].includes(1, -4); // true
-        [1, 2, NaN].includes(NaN); // true
-        ```
-         @method includes
-        @param {Object} obj The object to search for.
-        @param {Number} startAt optional starting location to search, default 0
-        @return {Boolean} `true` if object is found in the array.
-        @public
-      */
-      includes: function (obj, startAt) {
-        var len = _emberMetal.get(this, 'length');
-
-        if (startAt === undefined) {
-          startAt = 0;
-        }
-
-        if (startAt < 0) {
-          startAt += len;
-        }
-
-        for (var idx = startAt; idx < len; idx++) {
-          var currentObj = objectAt(this, idx);
-
-          // SameValueZero comparison (NaN !== NaN)
-          if (obj === currentObj || obj !== obj && currentObj !== currentObj) {
-            return true;
-          }
-        }
-
-        return false;
-      }
-    });
-  }
 
   exports.default = ArrayMixin;
 });
@@ -13787,6 +13781,29 @@ enifed('ember-runtime/mixins/array', ['exports', 'ember-utils', 'ember-metal', '
   @param {Number} addAmt The number of items that were added. If you
     pass `null` assumes 0.
   @return {Ember.Array} receiver
+  @public
+*/
+
+/**
+  Returns `true` if the passed object can be found in the array.
+  This method is a Polyfill for ES 2016 Array.includes.
+  If no `startAt` argument is given, the starting location to
+  search is 0. If it's negative, searches from the index of
+  `this.length + startAt` by asc.
+   ```javascript
+  [1, 2, 3].includes(2);     // true
+  [1, 2, 3].includes(4);     // false
+  [1, 2, 3].includes(3, 2);  // true
+  [1, 2, 3].includes(3, 3);  // false
+  [1, 2, 3].includes(3, -1); // true
+  [1, 2, 3].includes(1, -1); // false
+  [1, 2, 3].includes(1, -4); // true
+  [1, 2, NaN].includes(NaN); // true
+  ```
+   @method includes
+  @param {Object} obj The object to search for.
+  @param {Number} startAt optional starting location to search, default 0
+  @return {Boolean} `true` if object is found in the array.
   @public
 */
 
@@ -14306,9 +14323,7 @@ enifed('ember-runtime/mixins/enumerable', ['exports', 'ember-utils', 'ember-meta
       @public
     */
     contains: function (obj) {
-      if (_emberMetal.isFeatureEnabled('ember-runtime-enumerable-includes')) {
-        _emberMetal.deprecate('`Enumerable#contains` is deprecated, use `Enumerable#includes` instead.', false, { id: 'ember-runtime.enumerable-contains', until: '3.0.0', url: 'http://emberjs.com/deprecations/v2.x#toc_enumerable-contains' });
-      }
+      _emberMetal.deprecate('`Enumerable#contains` is deprecated, use `Enumerable#includes` instead.', false, { id: 'ember-runtime.enumerable-contains', until: '3.0.0', url: 'http://emberjs.com/deprecations/v2.x#toc_enumerable-contains' });
 
       var found = this.find(function (item) {
         return item === obj;
@@ -14829,14 +14844,15 @@ enifed('ember-runtime/mixins/enumerable', ['exports', 'ember-utils', 'ember-meta
       @public
     */
     without: function (value) {
-      if (!this.contains(value)) {
+      if (!this.includes(value)) {
         return this; // nothing to do
       }
 
       var ret = emberA();
 
       this.forEach(function (k) {
-        if (k !== value) {
+        // SameValueZero comparison (NaN !== NaN)
+        if (!(k === value || k !== k && value !== value)) {
           ret[ret.length] = k;
         }
       });
@@ -15092,99 +15108,74 @@ enifed('ember-runtime/mixins/enumerable', ['exports', 'ember-utils', 'ember-meta
         }
         return 0;
       });
+    },
+
+    /**
+      Returns a new enumerable that contains only items containing a unique property value.
+      The default implementation returns an array regardless of the receiver type.
+       ```javascript
+      let arr = [{ value: 'a' }, { value: 'a' }, { value: 'b' }, { value: 'b' }];
+      arr.uniqBy('value');  // [{ value: 'a' }, { value: 'b' }]
+      ```
+       @method uniqBy
+      @return {Ember.Enumerable}
+      @public
+    */
+
+    uniqBy: function (key) {
+      var ret = emberA();
+      var seen = new _emberUtils.EmptyObject();
+
+      this.forEach(function (item) {
+        var guid = _emberUtils.guidFor(_emberMetal.get(item, key));
+        if (!(guid in seen)) {
+          seen[guid] = true;
+          ret.push(item);
+        }
+      });
+
+      return ret;
+    },
+
+    /**
+      Returns `true` if the passed object can be found in the enumerable.
+       ```javascript
+      [1, 2, 3].includes(2);                     // true
+      [1, 2, 3].includes(4);                     // false
+      [1, 2, undefined].includes(undefined);     // true
+      [1, 2, null].includes(null);               // true
+      [1, 2, NaN].includes(NaN);                 // true
+      ```
+       @method includes
+      @param {Object} obj The object to search for.
+      @return {Boolean} `true` if object is found in the enumerable.
+      @public
+    */
+    includes: function (obj) {
+      _emberMetal.assert('Enumerable#includes cannot accept a second argument "startAt" as enumerable items are unordered.', arguments.length === 1);
+
+      var len = _emberMetal.get(this, 'length');
+      var idx = undefined,
+          next = undefined;
+      var last = null;
+      var found = false;
+
+      var context = popCtx();
+
+      for (idx = 0; idx < len && !found; idx++) {
+        next = this.nextObject(idx, last, context);
+
+        found = obj === next || obj !== obj && next !== next;
+
+        last = next;
+      }
+
+      next = last = null;
+      context = pushCtx(context);
+
+      return found;
     }
   });
-
-  if (_emberMetal.isFeatureEnabled('ember-runtime-computed-uniq-by')) {
-    Enumerable.reopen({
-      /**
-        Returns a new enumerable that contains only items containing a unique property value.
-        The default implementation returns an array regardless of the receiver type.
-         ```javascript
-        let arr = [{ value: 'a' }, { value: 'a' }, { value: 'b' }, { value: 'b' }];
-        arr.uniqBy('value');  // [{ value: 'a' }, { value: 'b' }]
-        ```
-         @method uniqBy
-        @return {Ember.Enumerable}
-        @public
-      */
-
-      uniqBy: function (key) {
-        var ret = emberA();
-        var seen = new _emberUtils.EmptyObject();
-
-        this.forEach(function (item) {
-          var guid = _emberUtils.guidFor(_emberMetal.get(item, key));
-          if (!(guid in seen)) {
-            seen[guid] = true;
-            ret.push(item);
-          }
-        });
-
-        return ret;
-      }
-    });
-  }
-
-  if (_emberMetal.isFeatureEnabled('ember-runtime-enumerable-includes')) {
-    Enumerable.reopen({
-      /**
-        Returns `true` if the passed object can be found in the enumerable.
-         ```javascript
-        [1, 2, 3].includes(2);                     // true
-        [1, 2, 3].includes(4);                     // false
-        [1, 2, undefined].includes(undefined);     // true
-        [1, 2, null].includes(null);               // true
-        [1, 2, NaN].includes(NaN);                 // true
-        ```
-         @method includes
-        @param {Object} obj The object to search for.
-        @return {Boolean} `true` if object is found in the enumerable.
-        @public
-      */
-      includes: function (obj) {
-        _emberMetal.assert('Enumerable#includes cannot accept a second argument "startAt" as enumerable items are unordered.', arguments.length === 1);
-
-        var len = _emberMetal.get(this, 'length');
-        var idx = undefined,
-            next = undefined;
-        var last = null;
-        var found = false;
-
-        var context = popCtx();
-
-        for (idx = 0; idx < len && !found; idx++) {
-          next = this.nextObject(idx, last, context);
-
-          found = obj === next || obj !== obj && next !== next;
-
-          last = next;
-        }
-
-        next = last = null;
-        context = pushCtx(context);
-
-        return found;
-      },
-
-      without: function (value) {
-        if (!this.includes(value)) {
-          return this; // nothing to do
-        }
-
-        var ret = emberA();
-
-        this.forEach(function (k) {
-          // SameValueZero comparison (NaN !== NaN)
-          if (!(k === value || k !== k && value !== value)) {
-            ret[ret.length] = k;
-          }
-        });
-
-        return ret;
-      }
-    });
-  }
 
   exports.default = Enumerable;
 });
@@ -15778,13 +15769,7 @@ enifed('ember-runtime/mixins/mutable_array', ['exports', 'ember-metal', 'ember-r
       @public
     */
     addObject: function (obj) {
-      var included = undefined;
-
-      if (_emberMetal.isFeatureEnabled('ember-runtime-enumerable-includes')) {
-        included = this.includes(obj);
-      } else {
-        included = this.contains(obj);
-      }
+      var included = this.includes(obj);
 
       if (!included) {
         this.pushObject(obj);
@@ -19396,12 +19381,12 @@ enifed('ember-runtime/utils', ['exports', 'ember-runtime/mixins/array', 'ember-r
 enifed("ember/features", ["exports"], function (exports) {
   "use strict";
 
-  exports.default = { "features-stripped-test": false, "ember-libraries-isregistered": false, "ember-runtime-computed-uniq-by": true, "ember-improved-instrumentation": false, "ember-runtime-enumerable-includes": true, "ember-string-ishtmlsafe": true, "ember-testing-check-waiters": true, "ember-metal-weakmap": false, "ember-glimmer-allow-backtracking-rerender": false, "ember-testing-resume-test": false, "mandatory-setter": true, "ember-glimmer-detect-backtracking-rerender": true };
+  exports.default = { "features-stripped-test": null, "ember-libraries-isregistered": null, "ember-improved-instrumentation": null, "ember-metal-weakmap": null, "ember-glimmer-allow-backtracking-rerender": false, "ember-testing-resume-test": null, "mandatory-setter": true, "ember-glimmer-detect-backtracking-rerender": true };
 });
 enifed("ember/version", ["exports"], function (exports) {
   "use strict";
 
-  exports.default = "2.11.0-beta.2";
+  exports.default = "2.12.0-canary-with-improved-backtracking-assertion";
 });
 enifed('rsvp', ['exports'], function (exports) {
   'use strict';
