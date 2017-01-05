@@ -12234,7 +12234,13 @@ babelHelpers.classCallCheck(this, CurlyComponentManager);
     };
 
     CurlyComponentManager.prototype.didUpdateLayout = function didUpdateLayout(bucket) {
+      var _this4 = this;
+
       bucket.finalize();
+
+      _emberMetal.runInDebug(function () {
+        return _this4.debugStack.pop();
+      });
     };
 
     CurlyComponentManager.prototype.didUpdate = function didUpdate(_ref5) {
@@ -12273,12 +12279,12 @@ babelHelpers.classCallCheck(this, TopComponentManager);
     }
 
     TopComponentManager.prototype.create = function create(environment, definition, args, dynamicScope, currentScope, hasBlock) {
-      var _this4 = this;
+      var _this5 = this;
 
       var component = definition.ComponentClass;
 
       _emberMetal.runInDebug(function () {
-        return _this4._pushToDebugStack(component._debugContainerKey, environment);
+        return _this5._pushToDebugStack(component._debugContainerKey, environment);
       });
 
       var finalizer = _emberMetal._instrumentStart('render.component', initialRenderInstrumentDetails, component);
@@ -13800,31 +13806,35 @@ enifed('ember-glimmer/utils/debug-stack', ['exports', 'ember-metal'], function (
         this._stack.push(new TemplateElement(name));
       };
 
-      DebugStack.prototype.pop = function pop() {
-        this._stack.pop();
-      };
-
-      DebugStack.prototype.currentTemplate = function currentTemplate() {
-        return this._getCurrentByType(TemplateElement);
-      };
-
       DebugStack.prototype.pushEngine = function pushEngine(name) {
         this._stack.push(new EngineElement(name));
       };
 
-      DebugStack.prototype.currentEngine = function currentEngine() {
-        return this._getCurrentByType(EngineElement);
+      DebugStack.prototype.pop = function pop() {
+        var element = this._stack.pop();
+
+        if (element) {
+          return element.name;
+        }
       };
 
       DebugStack.prototype.peek = function peek() {
-        var template = this.currentTemplate();
-        var engine = this.currentEngine();
+        var template = this._currentTemplate();
+        var engine = this._currentEngine();
 
         if (engine) {
           return '"' + template + '" (in the "' + engine + '" engine)';
-        } else {
+        } else if (template) {
           return '"' + template + '"';
         }
+      };
+
+      DebugStack.prototype._currentTemplate = function _currentTemplate() {
+        return this._getCurrentByType(TemplateElement);
+      };
+
+      DebugStack.prototype._currentEngine = function _currentEngine() {
+        return this._getCurrentByType(EngineElement);
       };
 
       DebugStack.prototype._getCurrentByType = function _getCurrentByType(type) {
