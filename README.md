@@ -9,7 +9,7 @@ When a new [build is released](http://emberjs.com/blog/2013/09/06/new-ember-rele
 package managers that don’t perform their own remote storage for
 distribution files can be instructed to find them here.
 
-Package Managers
+Package Managers.
 ----------------
 
 * [Bower](http://bower.io): `ember`
