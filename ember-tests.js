@@ -6,7 +6,7 @@
  *            Portions Copyright 2008-2011 Apple Inc. All rights reserved.
  * @license   Licensed under MIT license
  *            See https://raw.github.com/emberjs/ember.js/master/LICENSE
- * @version   2.12.0-canary-with-backtracking
+ * @version   2.12.0-canary
  */
 
 var enifed, requireModule, Ember;
@@ -9471,7 +9471,7 @@ babelHelpers.classCallCheck(this, _class);
 
       var expectedBacktrackingMessage = /modified "model\.name" twice on \[object Object\] in a single render\. It was rendered in "template:routeWithError" and modified in "component:x-foo"/;
 
-      if (true) {
+      if (false) {
         expectDeprecation(expectedBacktrackingMessage);
         return this.visit('/routeWithError');
       } else {
@@ -15709,7 +15709,7 @@ babelHelpers.classCallCheck(this, _class);
 
       var expectedBacktrackingMessage = /modified "value" twice on <\(.+> in a single render\. It was rendered in "component:x-middle" and modified in "component:x-inner"/;
 
-      if (true) {
+      if (false) {
         expectDeprecation(expectedBacktrackingMessage);
         this.runTask(function () {
           return outer.set('value', 2);
@@ -15771,7 +15771,7 @@ babelHelpers.classCallCheck(this, _class);
 
       var expectedBacktrackingMessage = /modified "wrapper\.content" twice on <Ember\.Object.+> in a single render\. It was rendered in "component:x-outer" and modified in "component:x-inner"/;
 
-      if (true) {
+      if (false) {
         expectDeprecation(expectedBacktrackingMessage);
         this.render('{{x-outer}}');
       } else {
@@ -17672,7 +17672,7 @@ babelHelpers.classCallCheck(this, _class);
 
       var expectedBacktrackingMessage = /modified "person\.name" twice on \[object Object\] in a single render\. It was rendered in "component:outer-component" and modified in "component:error-component"/;
 
-      if (true) {
+      if (false) {
         expectDeprecation(expectedBacktrackingMessage);
         this.render('{{component componentName}}', { componentName: 'outer-component' });
       } else {
@@ -30635,7 +30635,7 @@ enifed('ember-glimmer/tests/integration/helpers/render-test', ['exports', 'ember
         _this21.registerTemplate('outer', 'Hi {{model.name}} | {{render \'inner\' model}}');
         _this21.registerTemplate('inner', 'Hi {{propertyWithError}}');
 
-        if (true) {
+        if (false) {
           expectDeprecation(expectedBacktrackingMessage);
           _this21.render('{{render \'outer\' person}}', { person: person });
         } else {
@@ -32333,7 +32333,7 @@ enifed('ember-glimmer/tests/integration/mount-test', ['exports', 'ember-utils', 
 
       var expectedBacktrackingMessage = /modified "person\.name" twice on \[object Object\] in a single render\. It was rendered in "template:route-with-mount" \(in "engine:chat"\) and modified in "component:component-with-backtracking-set" \(in "engine:chat"\)/;
 
-      if (true) {
+      if (false) {
         expectDeprecation(expectedBacktrackingMessage);
         return this.visit('/route-with-mount');
       } else {
